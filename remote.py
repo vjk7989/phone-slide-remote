@@ -26,6 +26,7 @@ ACTION_KEYS = {
     "tab": (0x11, 0x09),                     # Ctrl+Tab
     "previous_tab": (0x11, 0x10, 0x09),      # Ctrl+Shift+Tab
     "literal_chord": (0x12, 0x11, 0x10, 0x09),  # Alt+Ctrl+Shift+Tab
+    "select": (0x0D,),                       # Enter
 }
 
 

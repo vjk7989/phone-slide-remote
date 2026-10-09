@@ -23,6 +23,7 @@
   .slides button { min-height: 10rem; font-size: 1.4rem; background: #2563eb; }
   .slides button:first-child { background: #374151; }
   .switches button { min-height: 5.5rem; padding: .4rem; background: #374151; font-size: .85rem; }
+  .switches button:last-child { grid-column: 1 / -1; background: #047857; }
   #acknowledge { display: none; width: 100%; margin-top: 1rem; min-height: 3.5rem; background: #b45309; font-size: .9rem; }
   #acknowledge.visible { display: block; }
   small { display: block; margin-top: 1.2rem; color: #9ca3af; line-height: 1.4; }
@@ -41,6 +42,7 @@
     <button type="button" data-action="tab">Next browser tab<br><span aria-hidden="true">Ctrl+Tab</span></button>
     <button type="button" data-action="previous_tab">Previous browser tab<br><span aria-hidden="true">Ctrl+Shift+Tab</span></button>
     <button type="button" data-action="literal_chord">Literal chord<br><span aria-hidden="true">Alt+Ctrl+Shift+Tab</span></button>
+    <button type="button" data-action="select">Select<br><span aria-hidden="true">Enter</span></button>
   </div>
   <button id="acknowledge" type="button">I checked the laptop screen</button>
   <small>If a press becomes uncertain, check the laptop screen before pressing again. Keep this page open during the pitch.</small>

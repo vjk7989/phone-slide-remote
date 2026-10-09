@@ -32,6 +32,7 @@ If the tunnel restarts or the laptop helper is relaunched, scan the new QR code.
 | Next browser tab | Ctrl+Tab |
 | Previous browser tab | Ctrl+Shift+Tab |
 | Literal chord | Alt+Ctrl+Shift+Tab |
+| Select | Enter |
 
 The keypress goes to the currently focused laptop app. The literal four-key chord's effect depends on that app. Administrator windows and Windows secure prompts cannot be controlled by this ordinary helper.
 

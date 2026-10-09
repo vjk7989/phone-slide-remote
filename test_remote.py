@@ -44,7 +44,7 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
                     response = await self.command(ws, action, f"action-{number}")
                     self.assertEqual(response, {"type": "ack", "id": f"action-{number}", "ok": True})
                     self.assertEqual(send.call_args.args[0], keys)
-                self.assertEqual(send.call_count, 6)
+                self.assertEqual(send.call_count, 7)
 
     async def test_invalid_token_and_origin_are_rejected(self):
         with self.assertRaises(InvalidStatus):
