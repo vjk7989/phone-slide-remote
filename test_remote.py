@@ -96,10 +96,11 @@ class RemoteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctypes.sizeof(remote.INPUT), 40 if ctypes.sizeof(ctypes.c_void_p) == 8 else 28)
 
     def test_setup_page_contains_private_hosted_link(self):
-        with patch.object(run, "_public_url", "https://sample.trycloudflare.com"):
+        with patch.object(run, "_public_url", "https://sample.trycloudflare.com"), patch.object(run, "_setup_public_url", "https://setup.trycloudflare.com"):
             page = run.setup_page().decode()
         self.assertIn(run.PAGES_URL, page)
         self.assertIn("https%3A%2F%2Fsample.trycloudflare.com", page)
+        self.assertIn("https://setup.trycloudflare.com" + run.PAIR_PATH, page)
         self.assertIn("data:image/svg+xml;base64,", page)
         self.assertNotIn("Bluetooth backup", page)
 

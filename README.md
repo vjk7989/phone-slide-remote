@@ -16,11 +16,11 @@ This downloads `cloudflared.exe` and installs the QR and WebSocket libraries ins
 
 1. Connect the laptop and Android phone to the internet. They may use different networks, including laptop Wi‑Fi and phone mobile data.
 2. Double-click **Start Slide Remote.cmd** in this folder, or run `powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1`. Keep its window open.
-3. On the laptop setup page (`http://127.0.0.1:8766/`), scan the **Hosted phone page** QR code with the phone camera. Keep this private pairing link to yourself.
+3. Open the **Hosted QR page** link printed in the helper window, or use the local setup page it opens. Scan the **Hosted phone page** QR code with the phone camera. Keep both links private.
 4. On the phone page, tap **Start** and wait for **Connected**. The connection remains open while the page is open and reconnects after a brief network interruption.
 5. Open your PDF in Chrome or Edge, choose **Fit to page**, and click the PDF so it has keyboard focus. Test Next and Previous, then the switch buttons, while watching the laptop screen.
 
-If the tunnel restarts or the laptop helper is relaunched, scan the new QR code. If a command becomes uncertain, check the laptop screen before acknowledging and pressing again. Stop disconnects the phone; Ctrl+C in the laptop window stops the helper.
+Both hosted links change when the helper restarts. If the control tunnel reconnects with a new address, reopen the hosted QR page and scan its new code. If a command becomes uncertain, check the laptop screen before acknowledging and pressing again. Stop disconnects the phone; Ctrl+C in the laptop window stops the helper.
 
 ## Buttons
 
