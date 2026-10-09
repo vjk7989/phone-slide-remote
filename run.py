@@ -36,24 +36,6 @@ _stop = threading.Event()
 _tunnel_process: subprocess.Popen[str] | None = None
 
 
-def bluetooth_ip() -> str | None:
-    command = (
-        "Get-NetIPAddress -InterfaceAlias 'Bluetooth Network Connection' "
-        "-AddressFamily IPv4 -ErrorAction SilentlyContinue | "
-        "Where-Object { $_.IPAddress -notlike '169.254.*' } | "
-        "Select-Object -First 1 -ExpandProperty IPAddress"
-    )
-    try:
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command", command],
-            capture_output=True, text=True, timeout=5, check=False,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-        return result.stdout.strip() or None
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-
-
 def qr_data(url: str) -> str:
     image = qrcode.make(url, image_factory=SvgPathImage, box_size=6, border=3)
     data = io.BytesIO()
@@ -74,18 +56,12 @@ def setup_page() -> bytes:
     with _state_lock:
         public_url = _public_url
         message = _tunnel_message
-    bt_ip = bluetooth_ip()
     cards = []
     if public_url:
         pair = urlencode({"endpoint": public_url, "token": remote.TOKEN})
         cards.append(link_card("Hosted phone page", PAGES_URL + "#" + pair))
-        cards.append("<details><summary>Direct tunnel backup</summary>" + link_card("Direct tunnel backup", public_url + "/#" + remote.TOKEN) + "</details>")
     else:
         cards.append(f"<section><h2>Internet link</h2><p>{html.escape(message)}</p></section>")
-    if bt_ip:
-        cards.append(link_card("Bluetooth backup", f"http://{bt_ip}:{remote.PORT}/#" + remote.TOKEN))
-    else:
-        cards.append("<section><h2>Bluetooth backup</h2><p>Pair the phone, enable Android Bluetooth tethering, then connect the laptop to its Bluetooth PAN. This card will appear when Windows receives an address.</p></section>")
     page = """<!doctype html><html lang="en"><meta charset="utf-8">
 <meta http-equiv="refresh" content="8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Slide remote setup</title><style>
@@ -96,7 +72,7 @@ img{display:block;width:min(100%,320px);height:auto;margin:auto}a{overflow-wrap:
 small{color:#4b5563}</style><h1>Slide remote</h1>
 <p>Scan the Hosted phone page QR code on your Android phone. Keep this page open on the laptop.</p><main>"""
     page += "".join(cards)
-    page += "</main><p><small>Keep this private link to yourself. It expires when you stop the launcher. If the tunnel restarts, scan its new QR code.</small></p></html>"
+    page += "</main><p><small>Keep this private link to yourself. It expires when you stop the launcher. Tap Start on the phone page to connect. If the tunnel restarts, scan its new QR code.</small></p></html>"
     return page.encode("utf-8")
 
 
@@ -164,12 +140,17 @@ def tunnel_worker() -> None:
 
 def main() -> None:
     try:
-        server = remote.make_server()
         setup_server = ThreadingHTTPServer(("127.0.0.1", SETUP_PORT), SetupHandler)
     except OSError as exc:
-        raise SystemExit(f"Cannot start remote or setup server: {exc}")
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+        raise SystemExit(f"Cannot start setup server: {exc}")
+    ready = threading.Event()
+    errors: list[Exception] = []
+    ws_thread = threading.Thread(target=remote.run_server, args=(_stop, ready, errors), daemon=True)
+    ws_thread.start()
+    if not ready.wait(5) or errors:
+        _stop.set()
+        setup_server.server_close()
+        raise SystemExit(f"Cannot start WebSocket server: {errors[0] if errors else 'timed out'}")
     threading.Thread(target=setup_server.serve_forever, daemon=True).start()
     threading.Thread(target=tunnel_worker, daemon=True).start()
     print(f"Setup page: {SETUP_URL}", flush=True)
@@ -185,10 +166,9 @@ def main() -> None:
         _stop.set()
         if _tunnel_process and _tunnel_process.poll() is None:
             _tunnel_process.terminate()
-        server.shutdown()
-        server.server_close()
         setup_server.shutdown()
         setup_server.server_close()
+        ws_thread.join(timeout=5)
 
 
 if __name__ == "__main__":

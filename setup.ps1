@@ -14,5 +14,13 @@ if (-not (Test-Path -LiteralPath .\vendor\qrcode)) {
     & python -m pip install --disable-pip-version-check --no-cache-dir --no-deps --target .\vendor 'qrcode>=8,<9'
     if ($LASTEXITCODE -ne 0) { throw 'QR code library installation failed.' }
 }
+if (-not (Test-Path -LiteralPath .\vendor\websockets)) {
+    Write-Host 'Installing WebSockets to G: ...'
+    $env:TEMP = Join-Path $PSScriptRoot '.runtime'
+    $env:TMP = $env:TEMP
+    $env:PIP_CACHE_DIR = $env:TEMP
+    & python -m pip install --disable-pip-version-check --no-cache-dir --no-deps --target .\vendor 'websockets>=15,<16'
+    if ($LASTEXITCODE -ne 0) { throw 'WebSocket library installation failed.' }
+}
 & $cloudflared --version
-& python -c "import sys; sys.path.insert(0, 'vendor'); import qrcode; print('QR code library ready')"
+& python -c "import sys; sys.path.insert(0, 'vendor'); import qrcode, websockets; print('QR and WebSocket libraries ready:', websockets.__version__)"

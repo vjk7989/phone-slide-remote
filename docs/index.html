@@ -19,17 +19,19 @@
   button { border: 0; border-radius: 1rem; color: #fff; font: inherit; font-weight: 700; touch-action: manipulation; cursor: pointer; }
   button:disabled { opacity: .45; cursor: default; }
   button:active:not(:disabled) { transform: scale(.98); }
+  #connection { width: 100%; min-height: 4rem; margin-bottom: 1rem; background: #059669; }
   .slides button { min-height: 10rem; font-size: 1.4rem; background: #2563eb; }
   .slides button:first-child { background: #374151; }
-  .switches button { min-height: 5.5rem; padding: .4rem; background: #374151; font-size: .9rem; }
+  .switches button { min-height: 5.5rem; padding: .4rem; background: #374151; font-size: .85rem; }
   #acknowledge { display: none; width: 100%; margin-top: 1rem; min-height: 3.5rem; background: #b45309; font-size: .9rem; }
   #acknowledge.visible { display: block; }
   small { display: block; margin-top: 1.2rem; color: #9ca3af; line-height: 1.4; }
 </style>
 <main>
   <h1>Slide remote</h1>
-  <p>Keep the PDF focused on your laptop.</p>
-  <div id="status" role="status" aria-live="polite">Connecting…</div>
+  <p>Keep the PDF focused on your laptop. Tap Start to connect.</p>
+  <div id="status" role="status" aria-live="polite">Ready to start</div>
+  <button id="connection" type="button">Start</button>
   <div class="slides">
     <button type="button" data-action="previous">← Previous</button>
     <button type="button" data-action="next">Next →</button>
@@ -37,69 +39,143 @@
   <div class="switches">
     <button type="button" data-action="window">Switch window<br><span aria-hidden="true">Alt+Tab</span></button>
     <button type="button" data-action="tab">Next browser tab<br><span aria-hidden="true">Ctrl+Tab</span></button>
+    <button type="button" data-action="previous_tab">Previous browser tab<br><span aria-hidden="true">Ctrl+Shift+Tab</span></button>
+    <button type="button" data-action="literal_chord">Literal chord<br><span aria-hidden="true">Alt+Ctrl+Shift+Tab</span></button>
   </div>
   <button id="acknowledge" type="button">I checked the laptop screen</button>
-  <small>If a press reports a connection error, check the laptop screen before pressing again.</small>
+  <small>If a press becomes uncertain, check the laptop screen before pressing again. Keep this page open during the pitch.</small>
 </main>
 <script>
 (() => {
-  const fragment = location.hash.slice(1);
-  const pairing = new URLSearchParams(fragment);
-  const hosted = pairing.has("endpoint");
-  let token = hosted ? (pairing.get("token") || "") : fragment;
-  let apiBase = location.origin;
-  if (hosted) {
-    try {
-      const endpoint = new URL(pairing.get("endpoint"));
-      if (endpoint.protocol !== "https:" || !/^[a-z0-9-]+\.trycloudflare\.com$/.test(endpoint.hostname)) throw new Error("invalid endpoint");
-      apiBase = endpoint.origin;
-    } catch { token = ""; }
-  }
+  const pairing = new URLSearchParams(location.hash.slice(1));
+  const token = pairing.get("token") || "";
+  let socketUrl = "";
+  try {
+    const endpoint = new URL(pairing.get("endpoint"));
+    if (endpoint.protocol !== "https:" || !/^[a-z0-9-]+\.trycloudflare\.com$/.test(endpoint.hostname)) throw new Error();
+    socketUrl = "wss://" + endpoint.hostname + "/ws";
+  } catch { /* A private QR link is required. */ }
   const buttons = [...document.querySelectorAll("button[data-action]")];
   const status = document.getElementById("status");
   const acknowledge = document.getElementById("acknowledge");
-  let online = false;
-  let busy = false;
+  const connection = document.getElementById("connection");
+  let socket = null;
+  let wanted = false;
+  let connected = false;
+  let pending = null;
+  let reconnectTimer = null;
+  let reconnectAttempts = 0;
   let uncertain = false;
-  const setStatus = (message, connected) => {
-    online = connected;
+  let invalidPairing = !token || !socketUrl;
+  const setStatus = (message) => {
     status.textContent = message;
     status.classList.toggle("online", connected);
-    buttons.forEach(button => button.disabled = !connected || busy || uncertain);
+    buttons.forEach(button => button.disabled = !connected || !!pending || uncertain);
+    connection.textContent = wanted ? "Stop" : "Start";
+    connection.disabled = invalidPairing;
   };
-  async function check() {
-    if (!token) { setStatus("Start the laptop helper, then scan its private QR code", false); return; }
-    try {
-      const response = await fetch(apiBase + "/health", {headers: {"X-Remote-Token": token}, cache: "no-store", signal: AbortSignal.timeout(4000)});
-      if (!uncertain) setStatus(response.ok ? "Connected" : "Private link expired; scan the new QR code", response.ok);
-    } catch { if (!uncertain) setStatus("Disconnected; check internet or Bluetooth", false); }
+  const markUncertain = () => {
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    pending = null;
+    uncertain = true;
+    acknowledge.classList.add("visible");
+    setStatus("Command outcome uncertain. Check the laptop before trying again.");
+  };
+  const scheduleReconnect = () => {
+    if (!wanted || reconnectTimer || invalidPairing) return;
+    const delay = Math.min(1000 * 2 ** reconnectAttempts, 10000);
+    reconnectAttempts++;
+    if (!uncertain) setStatus(reconnectAttempts > 4 ? "Still offline. Check the laptop or scan a new QR code." : "Reconnecting…");
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connect(); }, delay);
+  };
+  function connect() {
+    if (!wanted || invalidPairing || (socket && socket.readyState < WebSocket.CLOSING)) return;
+    connected = false;
+    if (!uncertain) setStatus("Connecting…");
+    const ws = new WebSocket(socketUrl);
+    socket = ws;
+    let readyTimer = null;
+    ws.onopen = () => {
+      ws.send(JSON.stringify({type: "start", token}));
+      readyTimer = setTimeout(() => ws.close(), 6000);
+    };
+    ws.onmessage = event => {
+      let message;
+      try { message = JSON.parse(event.data); } catch { return; }
+      if (message.type === "ready") {
+        clearTimeout(readyTimer);
+        connected = true;
+        reconnectAttempts = 0;
+        setStatus(uncertain ? "Connected. Check the laptop before continuing." : "Connected");
+      } else if (message.type === "ack" && pending && message.id === pending.id) {
+        const label = pending.label;
+        clearTimeout(pending.timer);
+        pending = null;
+        setStatus(message.ok ? "Sent: " + label : "Not sent: " + (message.error || "Command rejected"));
+      }
+    };
+    ws.onclose = event => {
+      clearTimeout(readyTimer);
+      if (socket !== ws) return;
+      socket = null;
+      connected = false;
+      markUncertain();
+      if (event.code === 4003) {
+        wanted = false;
+        invalidPairing = true;
+        setStatus("Private link expired. Scan the new QR code on the laptop.");
+      } else if (event.code === 4001) {
+        wanted = false;
+        setStatus("Another phone took control. Tap Start to take control again.");
+      } else if (wanted) {
+        scheduleReconnect();
+      } else {
+        setStatus("Stopped");
+      }
+    };
   }
+  connection.addEventListener("click", () => {
+    if (wanted) {
+      wanted = false;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      markUncertain();
+      connected = false;
+      const old = socket;
+      socket = null;
+      if (old) old.close(1000, "Stopped");
+      setStatus(uncertain ? "Check the laptop before continuing." : "Stopped");
+    } else {
+      wanted = true;
+      reconnectAttempts = 0;
+      connect();
+    }
+  });
   acknowledge.addEventListener("click", () => {
     uncertain = false;
     acknowledge.classList.remove("visible");
-    check();
+    setStatus(connected ? "Connected" : "Reconnecting…");
+    if (wanted && !connected && !reconnectTimer) scheduleReconnect();
   });
-  buttons.forEach(button => button.addEventListener("click", async () => {
-    if (busy || !online) return;
-    busy = true;
-    buttons.forEach(item => item.disabled = true);
-    try {
-      const id = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
-      const response = await fetch(apiBase + "/command", {
-        method: "POST", headers: {"Content-Type": "application/json", "X-Remote-Token": token},
-        body: JSON.stringify({action: button.dataset.action, id}), signal: AbortSignal.timeout(5000)
-      });
-      if (!response.ok) throw new Error((await response.json()).error || "Command failed");
-      setStatus("Sent: " + button.textContent.trim().replace(/\s+/g, " "), true);
-    } catch (error) {
-      uncertain = true;
-      acknowledge.classList.add("visible");
-      setStatus("Uncertain: check laptop before trying again (" + error.message + ")", false);
-    }
-    finally { busy = false; buttons.forEach(item => item.disabled = !online || uncertain); }
+  buttons.forEach(button => button.addEventListener("click", () => {
+    if (!connected || pending || uncertain || !socket) return;
+    const id = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+    const label = button.textContent.trim().replace(/\s+/g, " ");
+    pending = {id, label, timer: setTimeout(markUncertain, 5000)};
+    setStatus("Sending: " + label);
+    socket.send(JSON.stringify({type: "command", id, action: button.dataset.action}));
   }));
-  check();
-  setInterval(() => { if (!busy) check(); }, 4000);
+  const resume = () => {
+    if (wanted && (!socket || socket.readyState >= WebSocket.CLOSING)) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+      connect();
+    }
+  };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) resume(); });
+  window.addEventListener("online", resume);
+  setStatus(invalidPairing ? "Start the laptop helper, then scan its private QR code." : "Ready to start");
 })();
 </script>
 </html>
